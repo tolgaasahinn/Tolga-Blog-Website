@@ -10,17 +10,18 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import relationship
 from flask_login import UserMixin, login_user, LoginManager, login_required, current_user, logout_user
-from forms import CreatePostForm, LoginForm,RegisterForm,CommentForm
+from forms import CreatePostForm, LoginForm, RegisterForm, CommentForm
 from flask_gravatar import Gravatar
 from flask import abort
 from sqlalchemy import ForeignKey
+import os
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = '8BYkEfBA6O6donzWlSihBXox7C0sKR6b'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
 ckeditor = CKEditor(app)
 Bootstrap(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
-
 
 
 @login_manager.user_loader
@@ -28,13 +29,10 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 
-
-
 ##CONNECT TO DB
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///blog.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-
 
 # Gravatar
 gravatar = Gravatar(app,
@@ -47,16 +45,17 @@ gravatar = Gravatar(app,
                     base_url=None)
 
 
-
 ##CONFIGURE TABLES
 class User(UserMixin, db.Model):
-        __tablename__ = "users"
-        id = db.Column(db.Integer,primary_key=True)
-        email = db.Column(db.String(250), nullable=False,unique=True)
-        password = db.Column(db.String(250), nullable=False)
-        name = db.Column(db.String(100), nullable=False)
-        posts = relationship('BlogPost',back_populates="author")
-        comments = relationship('Comment',back_populates="comment_author")
+    __tablename__ = "users"
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(250), nullable=False, unique=True)
+    password = db.Column(db.String(250), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    posts = relationship('BlogPost', back_populates="author")
+    comments = relationship('Comment', back_populates="comment_author")
+
+
 class BlogPost(db.Model):
     __tablename__ = "blog_posts"
     id = db.Column(db.Integer, primary_key=True)
@@ -68,38 +67,40 @@ class BlogPost(db.Model):
     img_url = db.Column(db.String(250), nullable=False)
     author_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     comments = relationship("Comment", back_populates="parent_post")
-   
-   
+
+
 class Comment(db.Model):
     __tablename__ = "comments"
     id = db.Column(db.Integer, primary_key=True)
     author_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     comment_author = relationship("User", back_populates="comments")
-    
+
     post_id = db.Column(db.Integer, db.ForeignKey("blog_posts.id"))
     parent_post = relationship("BlogPost", back_populates="comments")
     text = db.Column(db.Text, nullable=False)
+
+
 db.create_all()
+
 
 def admin_only(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        #If id is not 1 then return abort with 403 error
+        # If id is not 1 then return abort with 403 error
         if current_user.id == None:
-            flash 
             return abort(403)
-        elif  current_user.id != 1 :
+        elif current_user.id != 1:
             return abort(403)
-        #Otherwise continue with the route function
-        return f(*args, **kwargs)        
+        # Otherwise continue with the route function
+        return f(*args, **kwargs)
+
     return decorated_function
-  
 
 
 @app.route('/')
 def get_all_posts():
     posts = BlogPost.query.all()
-    return render_template("index.html", all_posts=posts,current_user=current_user)
+    return render_template("index.html", all_posts=posts, current_user=current_user)
 
 
 @app.route('/register', methods=["GET", "POST"])
@@ -108,7 +109,7 @@ def register():
     if form.validate_on_submit():
         if User.query.filter_by(email=form.email.data).first():
             flash("You've already signed up with that email, log in instead!")
-            #Redirect to /login route.
+            # Redirect to /login route.
             return redirect(url_for('login'))
         hash_and_Salted = generate_password_hash(
             form.password.data,
@@ -116,15 +117,15 @@ def register():
             salt_length=8,
         )
         new_user = User(
-            email = form.email.data,
-            password = hash_and_Salted,
-            name = form.name.data,
+            email=form.email.data,
+            password=hash_and_Salted,
+            name=form.name.data,
         )
         db.session.add(new_user)
         db.session.commit()
         login_user(new_user)
         return redirect(url_for('get_all_posts'))
-    return render_template("register.html",form=form, current_user=current_user)
+    return render_template("register.html", form=form, current_user=current_user)
 
 
 @app.route('/login', methods=["GET", "POST"])
@@ -148,6 +149,7 @@ def login():
             return redirect(url_for('get_all_posts'))
     return render_template("login.html", form=form, current_user=current_user)
 
+
 @app.route('/logout')
 @login_required
 def logout():
@@ -155,9 +157,9 @@ def logout():
     return redirect(url_for('get_all_posts'))
 
 
-@app.route("/post/<int:post_id>" ,methods=["GET", "POST"])
+@app.route("/post/<int:post_id>", methods=["GET", "POST"])
 def show_post(post_id):
-    form  = CommentForm()
+    form = CommentForm()
     requested_post = BlogPost.query.get(post_id)
     if form.validate_on_submit():
         if not current_user.is_authenticated:
@@ -169,8 +171,8 @@ def show_post(post_id):
             parent_post=requested_post
         )
         db.session.add(new_comment)
-        db.session.commit()  
-    return render_template("post.html", post=requested_post, current_user=current_user,form = form)
+        db.session.commit()
+    return render_template("post.html", post=requested_post, current_user=current_user, form=form)
 
 
 @app.route("/about")
@@ -236,7 +238,6 @@ def delete_post(post_id):
     db.session.delete(post_to_delete)
     db.session.commit()
     return redirect(url_for('get_all_posts'))
-
 
 
 if __name__ == "__main__":
